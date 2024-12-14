@@ -1,5 +1,5 @@
 /* eslint-disable no-unused-vars */
-import { promises as fs } from 'fs';
+import fs from 'fs';
 import readline from 'readline';
 import { promisify } from 'util';
 import mimeMessage from 'mime-message';
@@ -11,6 +11,8 @@ const SCOPES = ['https://www.googleapis.com/auth/gmail.send'];
 // created automatically when the authorization flow completes for the first
 // time.
 const TOKEN_PATH = 'token.json';
+const readFileAsync = promisify(fs.readFile);
+const writeFileAsync = promisify(fs.writeFile);
 
 /**
  * Get and store new token after prompting for user authorization, and then
@@ -21,7 +23,6 @@ const TOKEN_PATH = 'token.json';
 async function getNewToken(oAuth2Client, callback) {
   const authUrl = oAuth2Client.generateAuthUrl({
     access_type: 'offline',
-    prompt: 'consent',
     scope: SCOPES,
   });
   console.log('Authorize this app by visiting this url:', authUrl);
@@ -37,7 +38,7 @@ async function getNewToken(oAuth2Client, callback) {
         return;
       }
       oAuth2Client.setCredentials(token);
-      fs.writeFile(TOKEN_PATH, JSON.stringify(token))
+      writeFileAsync(TOKEN_PATH, JSON.stringify(token))
         .then(() => {
           console.log('Token stored to', TOKEN_PATH);
           callback(oAuth2Client);
@@ -64,7 +65,7 @@ async function authorize(credentials, callback) {
   );
   console.log('Client authorization beginning');
   // Check if we have previously stored a token.
-  await fs.writeFile(TOKEN_PATH)
+  await readFileAsync(TOKEN_PATH)
     .then((token) => {
       oAuth2Client.setCredentials(JSON.parse(token));
       callback(oAuth2Client);
@@ -97,10 +98,12 @@ function sendMailService(auth, mail) {
  */
 export default class Mailer {
   static checkAuth() {
-    fs.readFile('credentials.json')
+    readFileAsync('credentials.json')
       .then(async (content) => {
         await authorize(JSON.parse(content), (auth) => {
-          if (auth) console.log('Auth check was successful');
+          if (auth) {
+            console.log('Auth check was successful');
+          }
         });
       })
       .catch((err) => {
@@ -123,8 +126,9 @@ export default class Mailer {
       body: message,
     };
 
-    if (!senderEmail) throw new Error(`Invalid sender: ${senderEmail}`);
-
+    if (!senderEmail) {
+      throw new Error(`Invalid sender: ${senderEmail}`);
+    }
     if (mimeMessage.validMimeMessage(msgData)) {
       const mimeMsg = mimeMessage.createMimeMessage(msgData);
       return { raw: mimeMsg.toBase64SafeString() };
@@ -133,7 +137,7 @@ export default class Mailer {
   }
 
   static sendMail(mail) {
-    fs.readFile('credentials.json')
+    readFileAsync('credentials.json')
       .then(async (content) => {
         await authorize(
           JSON.parse(content),

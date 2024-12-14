@@ -1,32 +1,40 @@
+/* eslint-disable import/no-named-as-default */
 import sha1 from 'sha1';
+import Queue from 'bull/lib/queue';
 import dbClient from '../utils/db';
 
-export default class UsersController {
-  static async postNew (req, res) {
-    const email = req.body ? req.body.email : null;
-    if (!email) {
-      return res.status(400).json({ error: 'Missing email' }).end();
-    }
-    const password = req.body ? req.body.password : null;
-    if (!password) {
-      return res.status(400).json({ error: 'Missing password' });
-    }
-    const usersCollection = await dbClient.usersCollection();
-    const user = await usersCollection.findOne({ email });
-    if (user) {
-      return res.status(400).json({ error: 'Already exist' });
-    }
-    const newUser = await usersCollection
-      .insertOne({ email, password: sha1(password) });
+const userQueue = new Queue('email sending');
 
-    return res.status(201).json({
-      email, id: newUser.insertedId.toString()
-    });
+export default class UsersController {
+  static async postNew(req, res) {
+    const email = req.body ? req.body.email : null;
+    const password = req.body ? req.body.password : null;
+
+    if (!email) {
+      res.status(400).json({ error: 'Missing email' });
+      return;
+    }
+    if (!password) {
+      res.status(400).json({ error: 'Missing password' });
+      return;
+    }
+    const user = await (await dbClient.usersCollection()).findOne({ email });
+
+    if (user) {
+      res.status(400).json({ error: 'Already exist' });
+      return;
+    }
+    const insertionInfo = await (await dbClient.usersCollection())
+      .insertOne({ email, password: sha1(password) });
+    const userId = insertionInfo.insertedId.toString();
+
+    userQueue.add({ userId });
+    res.status(201).json({ email, id: userId });
   }
 
-  static getMe (req, res) {
-    const { _id: id, email } = req.user;
+  static async getMe(req, res) {
+    const { user } = req;
 
-    return res.status(200).json({ id, email });
+    res.status(200).json({ email: user.email, id: user._id.toString() });
   }
 }
